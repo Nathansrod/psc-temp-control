@@ -1,5 +1,6 @@
 #include <DS18B20.h>
 
+
 // Pin alias
 int onButton = 2;
 int offButton = 3;
@@ -24,37 +25,46 @@ void setup() {
   // Variable declaration
   bool processOn = false;
   int setTemp = 25;
-  int measuredTemp = 30;
+  int measuredTemp = 0;
 
 }
 
 void loop() {
   measuredTemp = ds.getTempC();
 
-  if (digitalRead(onButton)) {
-    processOn = true;
-  }
-
-  if (digitalRead(offButton)) {
+  if (measuredTemp > 70) { // Turns process OFF if temp rises above 70
     processOn = false;
   }
 
-  if (digitalRead(incTemp)) {
+  if (digitalRead(onButton)) { // Turns process OFF when onButton is pressed
+    processOn = true;
+  }
+
+  if (digitalRead(offButton)) { // Turns process OFF when offButton is pressed
+    processOn = false;
+  }
+
+  if (digitalRead(incTemp)) { // Increments temp if incTemp is pressed and temp < 65
     if (setTemp < 65) {
       setTemp++;
     }
   }
 
-  if (digitalRead(decTemp)) {
+  if (digitalRead(decTemp)) { // Decreases temp if decTemp is pressed and temp > 25
     if (setTemp > 25) {
       setTemp--;
     }
   }
 
-  if (processOn) {
 
+
+  if (processOn) { // Executes control while process is ON
+    if (measuredTemp > setTemp) {
+      digitalWrite(pump, HIGH);
+      digitalWrite(pump)
+    }
   }
-  else {
+  else { // Turns off heater, and keeps pump and fan on to cool down if temp > 30 and process is OFF
     digitalWrite(heater, LOW);
     if (measuredTemp > 30) {
       digitalWrite(fan, HIGH);
