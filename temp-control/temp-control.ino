@@ -1,4 +1,5 @@
-#include <DS18B20.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 #include <LiquidCrystal_I2C.h>
 
 #define DEBOUNCER_TIMER 5
@@ -15,7 +16,10 @@ int cooling = 8;
 int heater = 9;
 
 // Temp sensor initialization
-DS18B20 ds(3);
+OneWire oneWire(3);
+DallasTemperature sensors(&oneWire);
+unsigned long int DS18B20Millis = 0;
+
 
 // Variable declaration
 bool processOn = false;
@@ -37,6 +41,9 @@ void setup() {
   pinMode(heater, OUTPUT);
   Serial.begin(9600);
 
+  // Temp sensor initialization
+  sensors.begin();
+
   // LCD initialization
   lcd.init();
   lcd.backlight();
@@ -48,8 +55,23 @@ void setup() {
 }
 
 void loop() {
-  measuredTemp = ds.getTempC();
-  Serial.println(measuredTemp);
+  
+  //is it time to read the temperature ?
+  if (millis() - DS18B20Millis >= 1000ul)
+  {
+    //restart this TIMER
+    DS18B20Millis = millis();
+
+    measuredTemp = sensors.getTempCByIndex(0);
+
+    Serial.print("Celsius temperature = ");
+    Serial.println(measuredTemp);
+
+    //start a new conversion request
+    sensors.setWaitForConversion(false);
+    sensors.requestTemperatures();
+    sensors.setWaitForConversion(true);
+  }
 
   if (measuredTemp > 70) { // Turns process OFF if temp rises above 70
     processOn = false;
