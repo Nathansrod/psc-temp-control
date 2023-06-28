@@ -8,15 +8,14 @@ LiquidCrystal_I2C lcd(0x27,20,4);
 
 // Pin alias
 int onButton = 2;
-int offButton = 3;
-int incTemp = 5;
-int decTemp = 4;
-int fan = 8;
+int offButton = 6;
+int incTemp = 4;
+int decTemp = 5;
+int cooling = 8;
 int heater = 9;
-int pump = 10;
 
 // Temp sensor initialization
-DS18B20 ds(11);
+DS18B20 ds(3);
 
 // Variable declaration
 bool processOn = false;
@@ -34,15 +33,18 @@ void setup() {
   pinMode(offButton, INPUT_PULLUP);
   pinMode(incTemp, INPUT_PULLUP);
   pinMode(decTemp, INPUT_PULLUP);
-  pinMode(fan, OUTPUT);
+  pinMode(cooling, OUTPUT);
   pinMode(heater, OUTPUT);
-  pinMode(pump, OUTPUT);
   Serial.begin(9600);
 
   // LCD initialization
   lcd.init();
   lcd.backlight();
   lcd.clear();
+
+  // PIN Initial values (output)
+  digitalWrite(heater, LOW);  
+  digitalWrite(cooling, LOW); 
 }
 
 void loop() {
@@ -90,19 +92,11 @@ void loop() {
   }
 
   if (processOn) { // Executes control while process is ON
-    digitalWrite(pump, HIGH);
+    digitalWrite(cooling, HIGH); // LOW = ON on relay output pins
   }
-  else { // Turns off heater, and keeps pump and fan on to cool down if temp > 30 and process is OFF
+  else { // Turns off heater, and keeps cooling on to cool down if temp > 30 and process is OFF
     digitalWrite(heater, LOW);
-    digitalWrite(pump, LOW);
-    // if (measuredTemp > 30) {
-    //   digitalWrite(fan, HIGH);
-    //   digitalWrite(pump, HIGH);
-    // }
-    // else {
-    //   digitalWrite(fan, LOW);
-    //   digitalWrite(pump, LOW);
-    // }
+    digitalWrite(cooling, LOW);
   }
 
   if (updateLCDTimer == LCD_REFRESH_TIMER) {
@@ -126,10 +120,8 @@ void loop() {
     lcd.setCursor(0,2);
     lcd.print("HEAT=");
     lcd.print(digitalRead(heater));
-    lcd.print(" PUMP=");
-    lcd.print(digitalRead(pump));
-    lcd.print(" FAN=");
-    lcd.print(digitalRead(fan));
+    lcd.print(" COOLING=");
+    lcd.print(digitalRead(cooling));
   }
   else {
     updateLCDTimer++;
