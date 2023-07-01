@@ -4,10 +4,12 @@
 
 #define DEBOUNCER_TIMER 5
 #define LCD_REFRESH_TIMER 50
+#define DEFAULT_HYSTERESIS 2.5
+#define SAFETY_TEMPERATURE 65.0
 
 LiquidCrystal_I2C lcd(0x27,20,4);
 
-// Pin alias
+// Pin alias ========================================================
 int onButton = 2;
 int offButton = 6;
 int incTemp = 4;
@@ -15,13 +17,13 @@ int decTemp = 5;
 int cooling = 8;
 int heater = 9;
 
-// Temp sensor initialization
+// Temp sensor initialization =======================================
 OneWire oneWire(3);
 DallasTemperature sensors(&oneWire);
 unsigned long int DS18B20Millis = 0;
 
 
-// Variable declaration
+// Variable declaration =============================================
 bool processOn = false;
 int setTemp = 25;
 float measuredTemp = 0;
@@ -30,9 +32,10 @@ int incButtonDebouncerCounter = 0;
 bool incButtonDebouncerFlag = false;
 int decButtonDebouncerCounter = 0;
 bool decButtonDebouncerFlag = false;
+float hysteresis = DEFAULT_HYSTERESIS;
 
 void setup() {
-  // Pin setup
+  // Pin setup ======================================================
   pinMode(onButton, INPUT_PULLUP);
   pinMode(offButton, INPUT_PULLUP);
   pinMode(incTemp, INPUT_PULLUP);
@@ -41,22 +44,42 @@ void setup() {
   pinMode(heater, OUTPUT);
   Serial.begin(9600);
 
-  // Temp sensor initialization
+  // Sensors initialization =========================================
   sensors.begin();
 
-  // LCD initialization
+  // LCD initialization =============================================
   lcd.init();
   lcd.backlight();
   lcd.clear();
 
-  // PIN Initial values (output)
+  // PIN Initial values (output) ====================================
   digitalWrite(heater, LOW);  
   digitalWrite(cooling, LOW); 
 }
 
+/*  Relay output control functions. If hardware changes, please
+    change here to adapt software
+*/
+void enableHeater() {
+  digitalWrite(heater, HIGH);
+}
+
+void disableHeater() {
+  digitalWrite(heater, LOW);
+}
+
+void enableCooling() {
+  digitalWrite(cooling, HIGH);
+}
+
+void disableCooling() {
+  digitalWrite(cooling, LOW);
+}
+
+// Main loop ========================================================
 void loop() {
   
-  //is it time to read the temperature ?
+  // DS18B20 sensor reading control (reads every 1s) ================
   if (millis() - DS18B20Millis >= 1000ul)
   {
     //restart this TIMER
@@ -73,21 +96,26 @@ void loop() {
     sensors.setWaitForConversion(true);
   }
 
-  if (measuredTemp > 70) { // Turns process OFF if temp rises above 70
+  // Turns process OFF if temp rises above SAFETY_TEMP ==============
+  if (measuredTemp > SAFETY_TEMPERATURE) { 
     processOn = false;
   }
 
-  if (digitalRead(onButton) == LOW) { // Turns process OFF when onButton is pressed
+  // Turns process OFF when onButton is pressed =====================
+  if (digitalRead(onButton) == LOW) { 
     processOn = true;
   }
 
-  if (digitalRead(offButton) == LOW) { // Turns process OFF when offButton is pressed
+  // Turns process OFF when offButton is pressed ====================
+  if (digitalRead(offButton) == LOW) { 
     processOn = false;
   }
 
-  if (digitalRead(incTemp) == LOW) { // Increments temp if incTemp is pressed and temp < 65
+  // Increments temp if incTemp is pressed and temp < 65 ============
+  if (digitalRead(incTemp) == LOW) { 
     incButtonDebouncerCounter++;
-    if (incButtonDebouncerCounter > DEBOUNCER_TIMER && incButtonDebouncerFlag == false) {
+    if (incButtonDebouncerCounter > DEBOUNCER_TIMER
+        && incButtonDebouncerFlag == false) {
       if (setTemp < 65) {
         setTemp++;
         incButtonDebouncerFlag = true;
@@ -99,9 +127,11 @@ void loop() {
     incButtonDebouncerFlag = false;
   }
 
-  if (digitalRead(decTemp) == LOW) { // Decreases temp if decTemp is pressed and temp > 25
+  // Decreases temp if decTemp is pressed and temp > 25 =============
+  if (digitalRead(decTemp) == LOW) { 
     decButtonDebouncerCounter++;
-    if (decButtonDebouncerCounter > DEBOUNCER_TIMER && decButtonDebouncerFlag == false) {
+    if (decButtonDebouncerCounter > DEBOUNCER_TIMER 
+        && decButtonDebouncerFlag == false) {
       if (setTemp > 25) {
         setTemp--;
         decButtonDebouncerFlag = true;
@@ -113,16 +143,35 @@ void loop() {
     decButtonDebouncerFlag = false;
   }
 
-  if (processOn) { // Executes control while process is ON
-    digitalWrite(cooling, HIGH); // LOW = ON on relay output pins
+  // Executes ON/OFF control while process is ON ====================
+  if (processOn) { 
+    if (measuredTemp > SAFETY_TEMPERATURE) {
+      processOn = false;
+    }
+    else {
+      if (measuredTemp > setTemp + hysteresis) {
+        enableCooling();
+        disableHeater();
+      }
+
+      if (measuredTemp < setTemp - hysteresis) {
+        disableCooling();
+        enableHeater();
+      }
+    }
   }
-  else { // Turns off heater, and keeps cooling on to cool down if temp > 30 and process is OFF
-    digitalWrite(heater, LOW);
-    digitalWrite(cooling, LOW);
+  else { // Turns off heater, cools down to 30oC ====================
+    disableHeater();
+    if (measuredTemp > 30) {
+      enableCooling();
+    }
+    else {
+      disableCooling();
+    }
   }
 
+  // LCD Update control =============================================
   if (updateLCDTimer == LCD_REFRESH_TIMER) {
-    // LCD Update
     updateLCDTimer = 0;
     lcd.setCursor(0,0);
     if (processOn) {
@@ -141,9 +190,17 @@ void loop() {
     lcd.print("oC");
     lcd.setCursor(0,2);
     lcd.print("HEAT=");
-    lcd.print(digitalRead(heater));
-    lcd.print(" COOLING=");
-    lcd.print(digitalRead(cooling));
+    if (digitalRead(heater) == 1) lcd.print("ON  ");
+    else lcd.print("OFF ");
+    lcd.print(" COOL=");
+    if (digitalRead(cooling) == 1) lcd.print("ON  ");
+    else lcd.print("OFF ");
+    lcd.setCursor(0,3);
+    lcd.print("HYST=");
+    lcd.print(hysteresis);
+    lcd.print("oC");
+    lcd.setCursor(12,3);
+    lcd.print("SUP=OFF");
   }
   else {
     updateLCDTimer++;
