@@ -4,13 +4,21 @@
 #include <Modbus.h>
 #include <ModbusSerial.h>
 
+// Constant declaration =============================================
 #define DEBOUNCER_TIMER 5
 #define LCD_REFRESH_TIMER 50
 #define DEFAULT_HYSTERESIS 0.5
 #define SAFETY_TEMPERATURE 60.0
 #define EMPTY_ALL true
 
-LiquidCrystal_I2C lcd(0x27,20,4);
+// Modbus register offest ===========================================
+#define FAN_STATUS 0
+#define HEATER_STATUS 0
+#define PUMP_STATUS 0
+#define PROCESS_COIL 0
+#define TEMP_PV_IREG 0
+#define TEMP_SP_HREG 0
+#define HYST_HREG 0
 
 // Pin alias ========================================================
 int onButton = 2;
@@ -26,9 +34,11 @@ OneWire oneWire(3);
 DallasTemperature sensors(&oneWire);
 unsigned long int DS18B20Millis = 0;
 
+// LCD declaration ==================================================
+LiquidCrystal_I2C lcd(0x27,20,4);
 
 // Variable declaration =============================================
-bool processOn = false;
+bool isProcessOn = false;
 int setTemp = 25;
 float measuredTemp = 0;
 float previousTemp = 0;
@@ -38,11 +48,18 @@ bool incButtonDebouncerFlag = false;
 int decButtonDebouncerCounter = 0;
 bool decButtonDebouncerFlag = false;
 float hysteresis = DEFAULT_HYSTERESIS;
-
-//ModbusSerial modbus;
+ModbusSerial mb(Serial, 1, SERIAL_8N1);
 
 void setup() {
-  //mb.config(&Serial, 9600, )
+  // Modbus configuration ===========================================
+  mb.config(9600);
+  mb.addIsts(FAN_STATUS);
+  mb.addIsts(HEATER_STATUS);
+  mb.addIsts(PUMP_STATUS);
+  mb.addCoil(PROCESS_COIL);
+  mb.addIreg(TEMP_PV_IREG);
+  mb.addHreg(TEMP_SP_HREG);
+  mb.addHreg(HYST_HREG, DEFAULT_HYSTERESIS);
 
   // Pin setup ======================================================
   pinMode(onButton, INPUT_PULLUP);
@@ -94,6 +111,7 @@ void disableCooling() {
 // Main loop ========================================================
 void loop() {
   if (!EMPTY_ALL) {
+    mb.task();
     // DS18B20 sensor reading control (reads every 1s) ================
     if (millis() - DS18B20Millis >= 1000ul)
     {
@@ -117,17 +135,19 @@ void loop() {
 
     // Turns process OFF if temp rises above SAFETY_TEMP ==============
     if (measuredTemp > SAFETY_TEMPERATURE) { 
-      processOn = false;
+      isProcessOn = false;
     }
 
     // Turns process OFF when onButton is pressed =====================
     if (digitalRead(onButton) == LOW) { 
-      processOn = true;
+      isProcessOn = true;
+      mb.setCoil(PROCESS_COIL, true);
     }
 
     // Turns process OFF when offButton is pressed ====================
     if (digitalRead(offButton) == LOW) { 
-      processOn = false;
+      isProcessOn = false;
+      mb.setCoil(PROCESS_COIL, false);
     }
 
     // Increments temp if incTemp is pressed and temp < 65 ============
@@ -138,6 +158,7 @@ void loop() {
         if (setTemp < 65) {
           setTemp++;
           incButtonDebouncerFlag = true;
+          mb.setHreg(TEMP_SP_HREG, setTemp);
         }
       }
     }
@@ -154,6 +175,7 @@ void loop() {
         if (setTemp > 25) {
           setTemp--;
           decButtonDebouncerFlag = true;
+          mb.setHreg(TEMP_SP_HREG, setTemp);
         }
       }
     }
@@ -163,9 +185,9 @@ void loop() {
     }
 
     // Executes ON/OFF control while process is ON ====================
-    if (processOn) { 
+    if (isProcessOn) { 
       if (measuredTemp > SAFETY_TEMPERATURE) {
-        processOn = false;
+        isProcessOn = false;
       }
       else {
         if (measuredTemp > setTemp + hysteresis) {
@@ -193,7 +215,7 @@ void loop() {
     if (updateLCDTimer == LCD_REFRESH_TIMER) {
       updateLCDTimer = 0;
       lcd.setCursor(0,0);
-      if (processOn) {
+      if (isProcessOn) {
         lcd.print("TEMPERATURE CTRL ON ");
       }
       else {
@@ -224,6 +246,16 @@ void loop() {
     else {
       updateLCDTimer++;
     }
+
+    // Modbus information exchange ==================================
+    mb.Ists(FAN_STATUS, !digitalRead(fan));
+    mb.Ists(HEATER_STATUS, !digitalRead(heater));
+    mb.Ists(PUMP_STATUS, digitalRead(pump));
+    mb.Ireg(TEMP_PV_IREG, measuredTemp);
+    hysteresis = mb.Hreg(HYST_HREG);
+    setTemp = mb.Hreg(TEMP_SP_HREG);
+    isProcessOn = mb.Coil(PROCESS_COIL);
+     
   }
   else {
     digitalWrite(pump, HIGH);
