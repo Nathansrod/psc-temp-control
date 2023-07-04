@@ -6,15 +6,14 @@
 #define DEBOUNCER_TIMER 5
 #define LCD_REFRESH_TIMER 50
 #define DEFAULT_HYSTERESIS 0.5
-#define SAFETY_TEMPERATURE 60.0
+#define SAFETY_TEMPERATURE 60
 #define EMPTY_ALL false
-#define TAGS_NUMBER 7
 
 LiquidCrystal_I2C lcd(0x27,20,4);
 
 // Modbus settings ==================================================
 ModbusinoSlave modbusino_slave(1);
-uint16_t tab_reg[TAGS_NUMBER];
+uint16_t tabreg[7];
 
 // Pin alias ========================================================
 int onButton = 2;
@@ -30,7 +29,6 @@ OneWire oneWire(3);
 DallasTemperature sensors(&oneWire);
 unsigned long int DS18B20Millis = 0;
 
-
 // Variable declaration =============================================
 bool processOn = false;
 int setTemp = 25;
@@ -42,6 +40,7 @@ bool incButtonDebouncerFlag = false;
 int decButtonDebouncerCounter = 0;
 bool decButtonDebouncerFlag = false;
 float hysteresis = DEFAULT_HYSTERESIS;
+int scadaStatus = 0;
 
 void setup() {
   // Modbus setup ===================================================
@@ -55,7 +54,6 @@ void setup() {
   pinMode(fan, OUTPUT);
   pinMode(pump, OUTPUT);
   pinMode(heater, OUTPUT);
-  Serial.begin(9600);
 
   // Sensors initialization =========================================
   sensors.begin();
@@ -108,9 +106,6 @@ void loop() {
       if (measuredTemp < 0) { // Discard dirty temp read ==============
         measuredTemp = previousTemp;
       }
-
-      Serial.print("Celsius temperature = ");
-      Serial.println(measuredTemp);
 
       //start a new conversion request
       sensors.setWaitForConversion(false);
@@ -222,21 +217,22 @@ void loop() {
       lcd.print(hysteresis);
       lcd.print("oC");
       lcd.setCursor(12,3);
-      lcd.print("SUP=OFF");
+      lcd.print("SUP=");
+      lcd.print(scadaStatus);
     }
     else {
       updateLCDTimer++;
     }
 
-    tab_reg[0] = measuredTemp;
-    tab_reg[1] = setTemp;
-    tab_reg[2] = heater;
-    tab_reg[3] = fan;
-    tab_reg[4] = processOn ? 1 : 0;
-    tab_reg[5] = hysteresis;
-    tab_reg[6] = fan; // Pump Status
+    tabreg[0] = measuredTemp * 100;
+    tabreg[1] = setTemp;
+    tabreg[2] = digitalRead(heater);
+    tabreg[3] = digitalRead(fan);
+    tabreg[4] = processOn ? 1 : 0;
+    tabreg[5] = hysteresis * 10;
+    tabreg[6] = digitalRead(pump);
 
-    modbusino_slave.loop(tab_reg, TAGS_NUMBER);
+    scadaStatus = modbusino_slave.loop(tabreg, 7);
   }
   else {
     digitalWrite(pump, HIGH);
